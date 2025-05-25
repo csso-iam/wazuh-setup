@@ -1,164 +1,147 @@
-The agents installation is automated using ansible.
+# 🚀 Wazuh Agent Automated Setup Using Ansible
 
-1- Requirements
+This guide provides a step-by-step approach to automating the installation of Wazuh agents on Linux and Windows systems using **Ansible**.
 
-For linux based machines:
+---
 
-- SSH access configured using a single sudoer usename:
-username: ansible
-password: no ui password, access only allow via ssh using a ssh key
+## 📋 1. Requirements
 
-OR in sample term, we need to have a single user with configured public key for each linux based machine.
-If not using the temporary ssh user/password, we will then configure the and deploy a single public ssh key on all the linux based agents
+### 🐧 Linux-Based Agents
+- SSH access must be configured using a **single sudo-enabled user**:
+  - **Username**: `ansible`
+  - **Password**: Not used — access is via **SSH key only**
 
-For windows machines:
-Preferably enable Open SSH on the managed machines,
-then access is also possible via ssh, if not
-enable WinRM on the windows machine,
-then create the ansible user with a password
+> If not already configured, deploy a public SSH key to each Linux machine manually or using a temporary user.
 
-To simplify the scripts,
-create a variable to put the target agent ip
-# === Configuration ===
-$ export TARGET_AGENT=192.168.1.117
-$ export TARGET_USER=ansible
-# =====================
+### 🪟 Windows-Based Agents
+- Preferred: Enable **OpenSSH** (Windows 10+)
+- If not available: Enable **WinRM** and create an `ansible` user with a password
 
-2- Generate the ssh public key for the ansible user and deployed that
-to all the all the linux machines, windows as well if open ssh is enabled on windows (required at least windows 10+)
+---
 
-$ ssh-keygen -t ed25519 -C "ansible"
+## 🖥️ 2. Prepare the Ansible Control Node
 
-by default the generated keys will be stored as follows:
+### Step 1: Install Python and Ansible
 
-- private key: /home/<username>/.ssh/id_ed25519
-- public key: /home/<username>/.ssh/id_ed25519.pub
+For Ubuntu/Debian:
 
-3a. Distribute Public Key via Existing SSH Access (Password-based)
-If the managed host allows password-based SSH, you can use ssh-copy-id or a manual ssh command to install the public key.
-
-$ cat ~/.ssh/id_ed25519.pub
-This outputs something like:
-
- ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM... ansible
-
-Option A1: Use ssh-copy-id (easiest), if already accessing the system as the ansible user, using password for instance
-
-$ ssh-copy-id -i ~/.ssh/id_ed25519.pub ansible@remote_host
-
-It will prompt for the password and append the key to ~ansible/.ssh/authorized_keys on the remote host.
-
-Example:
-
-$ ssh-copy-id -i ~/.ssh/id_ed25519.pub ansible@192.168.1.101
-
-Step-by-Step Using scp and ssh (if the main user is not ansible)
-📥 Step 1: Copy the public key file to the remote machine (as existinguser)
-
-$ scp ~/.ssh/id_ed25519.pub existinguser@remote_host:/tmp/ansible.pub
-
-eg. $ scp ~/.ssh/id_ed25519.pub root@agent.rehl9.5:/tmp/ansible.pub
-
-
-Step 2: SSH into the remote host and move the key to the ansible user
-
-$ ssh existinguser@remote_host
-
-Then run:
-
-$sudo mkdir -p ~ansible/.ssh
-$sudo cp /tmp/ansible.pub ~ansible/.ssh/authorized_keys
-$sudo chown -R ansible:ansible ~ansible/.ssh
-$sudo chmod 700 ~ansible/.ssh
-$sudo chmod 600 ~ansible/.ssh/authorized_keys
-$sudo rm /tmp/ansible.pub
-
-Final Check (from the control node)
-
-Try:
-
-ssh ansible@$TARGET_AGENT
-
-If everything worked, you'll connect without a password
-
-
-
-
-4- Now install and configure ansible in the control node
-native ansible installation
-
-
-Step 1: Install Ansible (Native Method)
-
-Step 1A: Install Python 3 and pip
-🔹 For Ubuntu / Debian
-
+```bash
 sudo apt update
 sudo apt install -y python3 python3-pip
+python3 -m pip install --user ansible
+```
 
-    You can verify the versions:
+Verify installation:
 
+```bash
 python3 --version
 pip3 --version
-
-
-🔹Installing Ansible
-
-Use pip in your selected Python environment to install the full Ansible package for the current user:
-
-python3 -m pip install --user ansible
-
-
-Check the installed ansible version
 ansible --version
+```
 
-Step2: create the ansible user or ensure it is present on the agent node With No Password Login
+### Step 2: Generate an SSH Key for the Ansible User
 
+```bash
+ssh-keygen -t ed25519 -C "ansible"
+```
+
+Generated key paths:
+- Private: `~/.ssh/id_ed25519`
+- Public: `~/.ssh/id_ed25519.pub`
+
+---
+
+## 🛠️ 3. Prepare the Agent Machines
+
+### 🔑 Linux: Set Up the `ansible` User
+
+On each Linux agent:
+
+```bash
 sudo adduser --disabled-password --gecos "" ansible
-
-Give the User sudo Access (Passwordless Optional)
-
 sudo usermod -aG sudo ansible
+echo 'ansible ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ansible
+```
 
-If you want ansible to use sudo without being prompted for a password (needed for many Ansible tasks):
+### 🔐 Distribute SSH Public Key
 
-echo 'ansible ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ansible   #debian or yum , ok
+#### Option A: Using `ssh-copy-id` (if password-based SSH is temporarily available)
 
-Set Up SSH Access From the Control Node
- => referers to the previous section
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub ansible@192.168.1.101
+```
 
-Step-by-Step Ansible Configuration
+#### Option B: Manual Method (if logging in with another user)
 
- 1. Set Up the Inventory File
-create a yaml file:
+```bash
+scp ~/.ssh/id_ed25519.pub root@agent:/tmp/ansible.pub
+ssh root@agent
+```
 
-inventory.yml
+Then on the agent:
 
-with the following content:
+```bash
+sudo mkdir -p ~ansible/.ssh
+sudo cp /tmp/ansible.pub ~ansible/.ssh/authorized_keys
+sudo chown -R ansible:ansible ~ansible/.ssh
+sudo chmod 700 ~ansible/.ssh
+sudo chmod 600 ~ansible/.ssh/authorized_keys
+sudo rm /tmp/ansible.pub
+```
 
+### ✅ Verify SSH Access
+
+From the control node:
+
+```bash
+ssh ansible@192.168.1.101
+```
+
+---
+
+## 📂 4. Set Up the Ansible Project
+
+### Create an Inventory File
+
+`inventory.yml`:
+
+```yaml
 linux:
   hosts:
     192.168.1.117:
     192.168.1.69:
+
 windows:
   hosts:
     192.168.1.78:
+```
 
-2. Create ansible.cfg in Your Project Folder
+---
+
+### Create an Ansible Configuration File
+
+`ansible.cfg`:
+
+```ini
 [defaults]
 inventory = inventory.yml
 remote_user = ansible
 host_key_checking = False
 retry_files_enabled = False
+```
 
-3- Create the playbook file:
-playbook.yml file
+---
 
+### Create the Linux Agent Playbook
+
+`agent_playbook.yml`:
+
+```yaml
 ---
 - name: Install Wazuh agent using script with system hostname
   hosts: all
   become: yes
-  gather_facts: true  # Required for ansible_hostname
+  gather_facts: true
 
   vars:
     script_local_path: "./agent_install.sh"
@@ -180,36 +163,39 @@ playbook.yml file
       shell: "{{ script_remote_path }} {{ manager_ip }} {{ agent_name }}"
       args:
         executable: /bin/bash
+```
 
+---
 
-3.Run the Playbook
--- cd playbooks folder 
+## ▶️ 5. Run the Playbook
+
+From your playbook directory:
+
+```bash
 ansible-playbook -i inventory.yml agent_playbook.yml
+```
 
+---
 
+## 🪟 6. Windows Agent Setup (Optional - If Using WinRM)
 
+If you cannot use OpenSSH on Windows, configure WinRM as follows.
 
+### Step 1: Install Python WinRM module
 
+```bash
+pip3 install "pywinrm>=0.4.0"
+```
 
+---
 
+### Step 2: Configure WinRM on the Windows Host (PowerShell)
 
-SPECIAL CASE FOR windows machines using WinRM
+Run as Administrator:
 
-
-On ansible control node:
-
-1- Using pip install winrm
-pip3 install "pywinrm>=0.4.0"  # for winrm
-
-
-2- WinRM Setup
-
-While this guide covers more details on how to enumerate, add, and remove listeners, you can run the following PowerShell snippet to setup the HTTP listener with the defaults:
-
-# Enables the WinRM service and sets up the HTTP listener
+```powershell
 Enable-PSRemoting -Force
 
-# Opens port 5985 for all profiles
 $firewallParams = @{
     Action      = 'Allow'
     Description = 'Inbound rule for Windows Remote Management via WS-Management. [TCP 5985]'
@@ -221,8 +207,6 @@ $firewallParams = @{
 }
 New-NetFirewallRule @firewallParams
 
-# Allows local user accounts to be used with WinRM
-# This can be ignored if using domain accounts
 $tokenFilterParams = @{
     Path         = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
     Name         = 'LocalAccountTokenFilterPolicy'
@@ -231,22 +215,48 @@ $tokenFilterParams = @{
     Force        = $true
 }
 New-ItemProperty @tokenFilterParams
+```
 
+Check listeners:
 
-Enumarate listeners
-
+```powershell
 winrm enumerate winrm/config/Listener
+```
 
-3- Test it (from Ansible control machine)
-From your Ansible machine (Linux), you can test WinRM using this:
+---
 
-ansible -i inventory.ini windows -m win_ping
+### Step 3: Test WinRM from Control Node
 
-4- Run the playbook
+```bash
+ansible -i inventory.yml windows -m win_ping
+```
 
+---
+
+### Step 4: Run the Windows Playbook
+
+```bash
 ansible-playbook -i inventory.yml agent_playbook_win.yml
+```
 
+---
 
+## 🧩 7. Troubleshooting Tips
 
+- Make sure firewalls allow SSH (Linux) or port 5985 (WinRM)
+- Validate IPs in your inventory
+- Ensure correct permissions on `~/.ssh` and `authorized_keys`
+- Test basic connectivity: `ping` or `telnet` to the agent's IP
+- Use `-vvv` with Ansible commands for verbose output
 
+---
+
+## ✅ Summary
+
+- Control node must have Python and Ansible installed
+- Linux agents must have the `ansible` user and public SSH key installed
+- Windows agents can be managed via OpenSSH or WinRM
+- Inventory and playbooks should be cleanly structured and easy to maintain
+
+> You're ready to automate Wazuh agent deployments like a pro 🚀
 
