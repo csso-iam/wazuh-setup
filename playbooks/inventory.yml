@@ -1,0 +1,14 @@
+linux:
+  hosts:
+    192.168.1.117:
+    192.168.1.69:
+windows:
+  hosts:
+    192.168.1.44:
+  vars:
+    ansible_connection: winrm
+    ansible_user: root
+    ansible_password: root
+    ansible_port: 5985
+    ansible_winrm_transport: ntlm  #should not be basic
+    ansible_winrm_server_cert_validation: ignore

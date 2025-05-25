@@ -1,0 +1,26 @@
+---
+- name: Install Wazuh agent using script with system hostname
+  hosts: linux #specify the managed hosts group here
+  become: yes
+  gather_facts: true  # Required for ansible_hostname
+
+  vars:
+    script_local_path: "./agent_install_linux.sh"
+    script_remote_path: "/tmp/agent_install_linux.sh"
+    manager_ip: "192.168.1.132"  # Replace with your Wazuh manager IP
+
+  tasks:
+    - name: Set agent name from system hostname
+      set_fact:
+        agent_name: "{{ ansible_hostname }}"
+
+    - name: Copy installation script to remote host
+      copy:
+        src: "{{ script_local_path }}"
+        dest: "{{ script_remote_path }}"
+        mode: '0755'
+
+    - name: Run the installation script with manager IP and agent name
+      shell: "{{ script_remote_path }} {{ manager_ip }} {{ agent_name }}"
+      args:
+        executable: /bin/bash
